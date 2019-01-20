@@ -67,6 +67,7 @@ before_script:
   - echo -en 'travis_fold:end:script.configure\\r'
 
 script:
+  - |
     if [[ "$NOPCH" == "2" ]]; then
       cd ../
       doxygen --version
