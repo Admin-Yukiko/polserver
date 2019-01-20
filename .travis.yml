@@ -43,6 +43,13 @@ matrix:
           sources: ['llvm-toolchain-trusty-6.0', 'ubuntu-toolchain-r-test']
           packages: ['clang-6.0', 'libstdc++6', 'libstdc++-7-dev']
       env: CXX_P=clang++-6.0 CC_P=clang-6.0 NOPCH=1
+    - os: linux
+      compiler: clang
+      addons:
+        apt:
+          sources: ['llvm-toolchain-trusty-6.0', 'ubuntu-toolchain-r-test']
+          packages: ['clang-6.0', 'libstdc++6', 'libstdc++-7-dev', 'doxygen', 'graphviz']
+      env: CXX_P=clang++-6.0 CC_P=clang-6.0 NOPCH=2
 
 before_install:
   - cd bin-build
@@ -60,6 +67,12 @@ before_script:
   - echo -en 'travis_fold:end:script.configure\\r'
 
 script:
+    if [[ "$NOPCH" == "2" ]]; then
+      cd ../
+      doxygen --version
+      doxygen doxygen.conf || travis_terminate 1;
+      travis_terminate 0
+    fi
   - echo 'Build...' && echo -en 'travis_fold:start:script.build\\r'
   - ./ninja -j 2
   - echo -en 'travis_fold:end:script.build\\r'
