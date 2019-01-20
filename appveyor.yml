@@ -16,7 +16,7 @@ init:
   - git config --global core.autocrlf true
 
 install:
-  - nuget install Doxygen -outputdirectory "c:\projects\doxygen"
+  - nuget install Doxygen -version 1.8.14 -outputdirectory "c:\projects\doxygen"
   - cd bin-build
     #  - cmake .. -G "Visual Studio 15 2017 Win64"
   - call "C:\\Program Files (x86)\\Microsoft Visual Studio\\2017\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat"
@@ -35,7 +35,7 @@ after_test:
   - ps: >-
       Get-ChildItem ..\\bin\\*.zip | % { Push-AppveyorArtifact $_.FullName -FileName $_.Name }
   - cd ..
-  - C:\\projects\\doxygen\\Doxygen.1.8.13\\tools\\doxygen.exe doxygen.conf
+  - C:\\projects\\doxygen\\Doxygen.1.8.14\\tools\\doxygen.exe doxygen.conf
 
 
 deploy: off
