@@ -25,8 +25,8 @@ matrix:
       addons:
         apt:
           sources: ['ubuntu-toolchain-r-test']
-          packages: ['g++-7', 'kwstyle']
-      env: CXX_P=g++-7 CC_P=gcc-7 NOPCH=0
+          packages: ['g++-8', 'kwstyle']
+      env: CXX_P=g++-8 CC_P=gcc-8 NOPCH=0
 
     - os: linux
       compiler: clang
