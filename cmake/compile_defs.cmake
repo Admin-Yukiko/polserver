@@ -230,7 +230,6 @@ function(warning_suppression target)
       /wd4786 #identifier trunc for debug
     >
     $<${linux}:
-      -Wno-error-parentheses # boost warning
     >
   )
 endfunction()
