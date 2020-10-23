@@ -1592,7 +1592,7 @@ int Compiler::handleForEach( CompilerContext& ctx, int level )
   localscope.addvar( itrvar.tokval(), foreach_ctx );
   program->addlocalvar( "_" + std::string( itrvar.tokval() ) + "_expr" );
   localscope.addvar( "_" + std::string( itrvar.tokval() ) + "_expr", foreach_ctx, false );
-  program->addlocalvar( "_" + std::string( itrvar.tokval() ) + "_counter" );
+  program->addlocalvar( "_" + std::string( itrvar.tokval() ) + "_iter" );
   localscope.addvar( "_" + std::string( itrvar.tokval() ) + "_iter", foreach_ctx, false );
 
 
@@ -3824,7 +3824,7 @@ int Compiler::compile( CompilerContext& ctx )
 int Compiler::getFileContents( const char* file, char** iv )
 {
   // linux fails always in the call before
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__APPLE__)
   std::string truename = Clib::GetTrueName( file );
   std::string filepart = Clib::GetFilePart( file );
   if ( truename != filepart && Clib::FileExists( file ) )
@@ -4391,6 +4391,11 @@ void Compiler::write_dbg( const std::string& pathname, bool include_debug_text )
 void Compiler::write_included_filenames( const std::string& pathname )
 {
   writeIncludedFilenames( pathname.c_str() );
+}
+
+void Compiler::set_include_compile_mode()
+{
+  setIncludeCompileMode();
 }
 
 Pol::Bscript::Compiler::LegacyFunctionOrder Compiler::get_legacy_function_order() const

@@ -8,11 +8,13 @@
 #include "compiler/ast/Program.h"
 #include "compiler/ast/ProgramParameterList.h"
 #include "compiler/ast/TopLevelStatements.h"
+#include "compiler/ast/UserFunction.h"
 #include "compiler/codegen/InstructionEmitter.h"
 #include "compiler/codegen/InstructionGenerator.h"
 #include "compiler/codegen/ModuleDeclarationRegistrar.h"
 #include "compiler/file/SourceFileIdentifier.h"
 #include "compiler/model/CompilerWorkspace.h"
+#include "compiler/model/FlowControlLabel.h"
 #include "compiler/representation/CompiledScript.h"
 #include "compiler/representation/ExportedFunction.h"
 #include "compiler/representation/ModuleDescriptor.h"
@@ -32,15 +34,26 @@ std::unique_ptr<CompiledScript> CodeGenerator::generate(
   CodeSection code;
   DataSection data;
 
+  std::vector<std::string> debug_filenames;
+  // For parity with OG compiler, debug file #0 is always empty.
+  debug_filenames.emplace_back( "" );
+  for ( auto& ident : workspace->referenced_source_file_identifiers )
+  {
+    debug_filenames.push_back( ident->pathname );
+  }
+  DebugStore debug( std::move( debug_filenames ) );
+
   ExportedFunctions exported_functions;
 
   ModuleDeclarationRegistrar module_declaration_registrar;
 
-  InstructionEmitter instruction_emitter( code, data,
+  InstructionEmitter instruction_emitter( code, data, debug, exported_functions,
                                           module_declaration_registrar );
   CodeGenerator generator( instruction_emitter, module_declaration_registrar );
 
   generator.register_module_functions( *workspace, legacy_function_order );
+
+  sort_user_functions( *workspace, legacy_function_order );
 
   generator.generate_instructions( *workspace );
 
@@ -48,7 +61,7 @@ std::unique_ptr<CompiledScript> CodeGenerator::generate(
       module_declaration_registrar.take_module_descriptors();
 
   return std::make_unique<CompiledScript>(
-      std::move( code ), std::move( data ), std::move( exported_functions ),
+      std::move( code ), std::move( data ), std::move( debug ), std::move( exported_functions ),
       std::move( workspace->global_variable_names ), std::move( module_descriptors ),
       std::move( program_info ), std::move( workspace->referenced_source_file_identifiers ) );
 }
@@ -63,7 +76,13 @@ CodeGenerator::CodeGenerator( InstructionEmitter& emitter,
 
 void CodeGenerator::generate_instructions( CompilerWorkspace& workspace )
 {
-  InstructionGenerator outer_instruction_generator( emitter );
+  emitter.debug_statementbegin();
+  emitter.debug_file_line( 0, 1 );
+
+  std::map<std::string, FlowControlLabel> user_function_labels;
+  InstructionGenerator outer_instruction_generator( emitter, user_function_labels, false );
+  InstructionGenerator function_instruction_generator( emitter, user_function_labels, true );
+
   workspace.top_level_statements->accept( outer_instruction_generator );
 
   if ( auto& program = workspace.program )
@@ -72,6 +91,11 @@ void CodeGenerator::generate_instructions( CompilerWorkspace& workspace )
   }
 
   emit.progend();
+
+  for ( auto& user_function : workspace.user_functions )
+  {
+    user_function->accept( function_instruction_generator );
+  }
 }
 
 void CodeGenerator::register_module_functions( CompilerWorkspace& workspace,
@@ -136,6 +160,54 @@ void CodeGenerator::sort_module_functions_alphabetically( CompilerWorkspace& wor
 
   std::sort( workspace.referenced_module_function_declarations.begin(),
              workspace.referenced_module_function_declarations.end(), sortByModuleFunctionName );
+}
+
+void CodeGenerator::sort_user_functions( CompilerWorkspace& workspace,
+                                         const LegacyFunctionOrder* legacy_function_order )
+{
+  if ( legacy_function_order )
+  {
+    sort_user_functions_as_legacy( workspace, *legacy_function_order );
+  }
+  else
+  {
+    sort_user_functions_alphabetically( workspace );
+  }
+}
+
+void CodeGenerator::sort_user_functions_as_legacy(
+    CompilerWorkspace& workspace, const LegacyFunctionOrder& legacy_function_order )
+{
+  std::map<std::string, size_t> c1_order;
+  for ( auto& n : legacy_function_order.userfunc_emit_order )
+  {
+    c1_order[n] = c1_order.size();
+  }
+
+  auto sortAsLegacy = [c1_order]( const std::unique_ptr<UserFunction>& s1,
+                                  const std::unique_ptr<UserFunction>& s2 ) -> bool {
+    auto itr1 = c1_order.find( s1->name );
+    auto itr2 = c1_order.find( s2->name );
+    if ( itr1 != c1_order.end() && itr1 != c1_order.end() )
+    {
+      return ( *itr1 ).second < ( *itr2 ).second;
+    }
+    else
+    {
+      return s1->name < s2->name;
+    }
+  };
+  std::sort( workspace.user_functions.begin(), workspace.user_functions.end(), sortAsLegacy );
+}
+
+void CodeGenerator::sort_user_functions_alphabetically( CompilerWorkspace& workspace )
+{
+  auto sortByName = []( const std::unique_ptr<UserFunction>& s1,
+                        const std::unique_ptr<UserFunction>& s2 ) -> bool {
+    return s1->name < s2->name;
+  };
+
+  std::sort( workspace.user_functions.begin(), workspace.user_functions.end(), sortByName );
 }
 
 }  // namespace Pol::Bscript::Compiler

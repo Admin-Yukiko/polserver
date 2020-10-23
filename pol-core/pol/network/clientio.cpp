@@ -34,12 +34,12 @@ namespace Pol
 {
 namespace Network
 {
-std::string Client::ipaddrAsString() const
+std::string ThreadedClient::ipaddrAsString() const
 {
   return AddressToString( &this->ipaddr );
 }
 
-void Client::recv_remaining( int total_expected )
+void ThreadedClient::recv_remaining( int total_expected )
 {
   int count;
   int max_expected = total_expected - bytes_received;
@@ -69,7 +69,7 @@ void Client::recv_remaining( int total_expected )
   }
 }
 
-void Client::recv_remaining_nocrypt( int total_expected )
+void ThreadedClient::recv_remaining_nocrypt( int total_expected )
 {
   int count;
 
@@ -95,11 +95,10 @@ void Client::recv_remaining_nocrypt( int total_expected )
   }
 }
 
-
 /* NOTE: If this changes, code in client.cpp must change - pause() and restart() use
    pre-encrypted values of 33 00 and 33 01.
    */
-void Client::transmit_encrypted( const void* data, int len )
+void ThreadedClient::transmit_encrypted( const void* data, int len )
 {
   THREAD_CHECKPOINT( active_client, 100 );
   const unsigned char* cdata = (const unsigned char*)data;
@@ -186,7 +185,7 @@ void Client::transmit_encrypted( const void* data, int len )
   THREAD_CHECKPOINT( active_client, 116 );
 }
 
-void Client::transmit( const void* data, int len, bool needslock )
+void Client::transmit( const void* data, int len )
 {
   ref_ptr<Core::BPacket> p;
   bool handled = false;
@@ -202,17 +201,9 @@ void Client::transmit( const void* data, int len, bool needslock )
     handled = GetAndCheckPacketHooked( this, data, phd );
     if ( handled )
     {
-      if ( needslock )
-      {
-        Core::PolLock lock;
-        std::lock_guard<std::mutex> guard( _SocketMutex );
-        CallOutgoingPacketExportedFunction( this, data, len, p, phd, handled );
-      }
-      else
-      {
-        std::lock_guard<std::mutex> guard( _SocketMutex );
-        CallOutgoingPacketExportedFunction( this, data, len, p, phd, handled );
-      }
+      Core::PolLock lock;
+      std::lock_guard<std::mutex> guard( _SocketMutex );
+      CallOutgoingPacketExportedFunction( this, data, len, p, phd, handled );
     }
   }
 

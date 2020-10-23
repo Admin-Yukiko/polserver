@@ -5,10 +5,12 @@
 #include "clib/strutil.h"
 #include "compiler/Report.h"
 #include "compiler/ast/FloatValue.h"
+#include "compiler/ast/FunctionReference.h"
 #include "compiler/ast/IntegerValue.h"
 #include "compiler/ast/StringValue.h"
 #include "compiler/astbuilder/BuilderWorkspace.h"
 #include "compiler/file/SourceLocation.h"
+#include "compiler/model/FunctionLink.h"
 
 using EscriptGrammar::EscriptParser;
 
@@ -26,6 +28,21 @@ std::unique_ptr<FloatValue> ValueBuilder::float_value(
   auto loc = location_for( *ctx );
   double value = std::stod( text( ctx->FLOAT_LITERAL() ) );
   return std::make_unique<FloatValue>( loc, value );
+}
+
+std::unique_ptr<FunctionReference> ValueBuilder::function_reference(
+    EscriptParser::FunctionReferenceContext* ctx )
+{
+  auto source_location = location_for( *ctx );
+  auto name = ctx->IDENTIFIER()->getSymbol()->getText();
+
+  auto function_link = std::make_shared<FunctionLink>( source_location );
+  auto function_reference =
+      std::make_unique<FunctionReference>( source_location, name, function_link );
+
+  workspace.function_resolver.register_function_link( name, function_link );
+
+  return function_reference;
 }
 
 std::unique_ptr<IntegerValue> ValueBuilder::integer_value(
@@ -63,6 +80,10 @@ std::string ValueBuilder::unquote( antlr4::tree::TerminalNode* string_literal )
     {
       // parser should catch this.
       location_for( *string_literal ).internal_error( "unterminated string" );
+    }
+    if ( *end == '\n' || *end == '\r' ) {
+      report.error( location_for( *string_literal ), "String literal contains a newline.\n" );
+      return lit;
     }
 
     if ( escnext && hexnext )
@@ -142,22 +163,37 @@ std::unique_ptr<Value> ValueBuilder::value( EscriptParser::LiteralContext* ctx )
 
 int ValueBuilder::to_int( EscriptParser::IntegerLiteralContext* ctx )
 {
-  if ( auto decimal_literal = ctx->DECIMAL_LITERAL() )
+  try
   {
-    return std::stoi( decimal_literal->getSymbol()->getText() );
+    if ( auto decimal_literal = ctx->DECIMAL_LITERAL() )
+    {
+      return std::stoi( decimal_literal->getSymbol()->getText() );
+    }
+    else if ( auto hex_literal = ctx->HEX_LITERAL() )
+    {
+      return static_cast<int>( std::stoul( hex_literal->getSymbol()->getText(), nullptr, 16 ) );
+    }
+    else if ( auto oct_literal = ctx->OCT_LITERAL() )
+    {
+      return std::stoi( oct_literal->getSymbol()->getText(), nullptr, 8 );
+    }
+    else if ( auto binary_literal = ctx->BINARY_LITERAL() )
+    {
+      return std::stoi( binary_literal->getSymbol()->getText(), nullptr, 2 );
+    }
   }
-  else if ( auto hex_literal = ctx->HEX_LITERAL() )
+  catch ( std::invalid_argument& )
   {
-    return static_cast<int>( std::stoul( hex_literal->getSymbol()->getText(), nullptr, 16 ) );
+    report.error( location_for( *ctx ), "unable to convert integer value '", ctx->getText(),
+                  "'.\n" );
+    throw;
   }
-  else if ( auto oct_literal = ctx->OCT_LITERAL() )
+  catch ( std::out_of_range& )
   {
-    return std::stoi( oct_literal->getSymbol()->getText(), nullptr, 8 );
+    report.error( location_for( *ctx ), "integer value '", ctx->getText(), "' out of range.\n" );
+    throw;
   }
-  else if ( auto binary_literal = ctx->BINARY_LITERAL() )
-  {
-    return std::stoi( binary_literal->getSymbol()->getText(), nullptr, 2 );
-  }
+
   location_for( *ctx ).internal_error( "unhandled integer literal" );
 }
 

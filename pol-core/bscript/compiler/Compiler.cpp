@@ -10,13 +10,14 @@
 #include "compiler/astbuilder/CompilerWorkspaceBuilder.h"
 #include "compiler/codegen/CodeGenerator.h"
 #include "compiler/file/SourceFileCache.h"
+#include "compiler/file/SourceFileIdentifier.h"
 #include "compiler/format/CompiledScriptSerializer.h"
+#include "compiler/format/DebugStoreSerializer.h"
 #include "compiler/format/ListingWriter.h"
 #include "compiler/model/CompilerWorkspace.h"
 #include "compiler/optimizer/Optimizer.h"
 #include "compiler/representation/CompiledScript.h"
 #include "compilercfg.h"
-
 
 namespace Pol::Bscript::Compiler
 {
@@ -56,12 +57,33 @@ void Compiler::write_listing( const std::string& pathname )
   }
 }
 
-void Compiler::write_dbg( const std::string& /*pathname*/, bool /*include_debug_text*/ )
+void Compiler::write_dbg( const std::string& pathname, bool include_debug_text )
 {
+  if ( output )
+  {
+    std::ofstream ofs( pathname, std::ofstream::binary );
+    auto text_ofs = include_debug_text ? std::make_unique<std::ofstream>( pathname + ".txt" )
+                                       : std::unique_ptr<std::ofstream>();
+
+    DebugStoreSerializer(*output).write( ofs, text_ofs.get() );
+  }
 }
 
-void Compiler::write_included_filenames( const std::string& /*pathname*/ )
+void Compiler::write_included_filenames( const std::string& pathname )
 {
+  if ( output )
+  {
+    std::ofstream ofs( pathname );
+    for( auto& r : output->source_file_identifiers )
+    {
+      ofs << r->pathname << "\n";
+    }
+  }
+}
+
+void Compiler::set_include_compile_mode()
+{
+  user_function_inclusion = UserFunctionInclusion::All;
 }
 
 bool Compiler::compile_file( const std::string& filename,
@@ -97,7 +119,7 @@ void Compiler::compile_file_steps( const std::string& pathname,
   if ( report.error_count() )
     return;
 
-  register_constants( *workspace );
+  register_constants( *workspace, report );
   if ( report.error_count() )
     return;
 
@@ -122,30 +144,31 @@ std::unique_ptr<CompilerWorkspace> Compiler::build_workspace(
 {
   Pol::Tools::HighPerfTimer timer;
   CompilerWorkspaceBuilder workspace_builder( em_cache, inc_cache, profile, report );
-  auto workspace = workspace_builder.build( pathname, legacy_function_order );
+  auto workspace =
+      workspace_builder.build( pathname, legacy_function_order, user_function_inclusion );
   profile.build_workspace_micros += timer.ellapsed().count();
   return workspace;
 }
 
-void Compiler::register_constants( CompilerWorkspace& workspace )
+void Compiler::register_constants( CompilerWorkspace& workspace, Report& report )
 {
   Pol::Tools::HighPerfTimer timer;
-  SemanticAnalyzer::register_const_declarations( workspace );
+  SemanticAnalyzer::register_const_declarations( workspace, report );
   profile.register_const_declarations_micros += timer.ellapsed().count();
 }
 
 void Compiler::optimize( CompilerWorkspace& workspace, Report& report )
 {
   Pol::Tools::HighPerfTimer timer;
-  Optimizer optimizer( report );
-  optimizer.optimize( workspace );
+  Optimizer optimizer( workspace.constants, report );
+  optimizer.optimize( workspace, user_function_inclusion );
   profile.optimize_micros += timer.ellapsed().count();
 }
 
 void Compiler::disambiguate( CompilerWorkspace& workspace, Report& report )
 {
   Pol::Tools::HighPerfTimer timer;
-  Disambiguator disambiguator( report );
+  Disambiguator disambiguator( workspace.constants, report );
   disambiguator.disambiguate( workspace );
   profile.disambiguate_micros += timer.ellapsed().count();
 }
@@ -153,8 +176,8 @@ void Compiler::disambiguate( CompilerWorkspace& workspace, Report& report )
 void Compiler::analyze( CompilerWorkspace& workspace, Report& report )
 {
   Pol::Tools::HighPerfTimer timer;
-  SemanticAnalyzer analyzer( report );
-  analyzer.analyze( workspace );
+  SemanticAnalyzer analyzer( workspace, report );
+  analyzer.analyze();
   profile.analyze_micros += timer.ellapsed().count();
 }
 
